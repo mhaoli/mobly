@@ -20,6 +20,7 @@ from mobly.controllers.android_device_lib import jsonrpc_client_base
 from mobly.controllers.android_device_lib import snippet_client
 from tests.lib import jsonrpc_client_test_base
 from tests.lib import mock_android_device
+from tests.lib.snippet import utils as snippet_test_utils
 
 MOCK_PACKAGE_NAME = 'some.package.name'
 MOCK_MISSING_PACKAGE_NAME = 'not.installed'
@@ -469,17 +470,12 @@ class SnippetClientTest(jsonrpc_client_test_base.JsonRpcClientTestBase):
     mock_print.assert_not_called()
 
   def _make_client(self, adb_proxy=None):
-    adb_proxy = adb_proxy or mock_android_device.MockAdbProxy(
-        instrumented_packages=[(MOCK_PACKAGE_NAME,
-                                snippet_client._INSTRUMENTATION_RUNNER_PACKAGE,
-                                MOCK_PACKAGE_NAME)])
-    ad = mock.Mock()
-    ad.adb = adb_proxy
-    ad.adb.current_user_id = MOCK_USER_ID
-    ad.build_info = {
-        'build_version_codename': ad.adb.getprop('ro.build.version.codename'),
-        'build_version_sdk': ad.adb.getprop('ro.build.version.sdk'),
-    }
+    ad = snippet_test_utils.mock_android_device_for_client_test(
+      package_name=MOCK_PACKAGE_NAME,
+      snippet_runner=snippet_client._INSTRUMENTATION_RUNNER_PACKAGE,
+      adb_proxy=adb_proxy,
+      mock_user_id=MOCK_USER_ID,
+    )
     return snippet_client.SnippetClient(package=MOCK_PACKAGE_NAME, ad=ad)
 
   def _setup_mock_instrumentation_cmd(self, mock_start_standing_subprocess,
