@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Base class for clients that communicate with apps over a JSON RPC interface.
 
 The JSON protocol expected by this module is:
@@ -89,17 +90,13 @@ class ApiError(Error):
   """Raised when remote API reports an error."""
 
 
-class ServerDiedError(Error):
-  """Raised if snippet server died before all tests finish."""
-
-
 class ProtocolError(Error):
   """Raised when there is some error in exchanging data with server."""
   NO_RESPONSE_FROM_HANDSHAKE = 'No response from handshake.'
   NO_RESPONSE_FROM_SERVER = ('No response from server. '
                              'Check the device logcat for crashes.')
   MISMATCHED_API_ID = 'RPC request-response ID mismatch.'
-  RESPONSE_MISS_FIELD = 'Miss required field in the RPC response: %s.'
+  RESPONSE_MISS_FIELD = 'Missing required field in the RPC response: %s.'
 
 
 class JsonRpcCommand:
@@ -172,7 +169,7 @@ class JsonRpcClientBase(abc.ABC):
     """
 
   def restore_app_connection(self, port=None):
-    """Reconnects to the app after device USB was disconnected.
+    """Reconnects to the app after the device was disconnected.
 
     Instead of creating new instance of the client:
       - Uses the given port (or finds a new available host_port if none is
@@ -392,17 +389,17 @@ class JsonRpcClientBase(abc.ABC):
       i += 1
 
   def set_snippet_client_verbose_logging(self, verbose):
-    """Switches verbose logging. True for logging full RPC response.
+    """Switches verbose logging. True for logging full RPC responses.
 
-    By default it will only write max_rpc_return_value_length for Rpc return
-    strings. If you need to see full message returned from Rpc, please turn
-    on verbose logging.
+    By default it will write full messages returned from Rpc. Turning off the
+    verbose logging will result in writing _MAX_RPC_RESP_LOGGING_LENGTH
+    characters of each Rpc returned string.
 
-    max_rpc_return_value_length will set to 1024 by default, the length
-    contains full Rpc response in Json format, included 1st element "id".
+    _MAX_RPC_RESP_LOGGING_LENGTH will set to 1024 by default, the length
+    contains the full Rpc response in JSON format, including 1st element "id".
 
     Args:
-      verbose: bool. If True, turns on verbose logging, if False turns off
+      verbose: bool, if True, turns on verbose logging, if False turns off.
     """
     self._ad.log.info('Set verbose logging to %s.', verbose)
     self.verbose_logging = verbose

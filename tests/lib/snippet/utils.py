@@ -12,22 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Util functions for snippet client test modules."""
+
 import string
 import random
-from unittest import mock
-from tests.lib import mock_android_device
 
 
-MOCK_RESP_FLEXIABLE_RESULT_LENGTH = (
+MOCK_RESP_TEMPLATE = (
     '{"id": 0, "result": "%s", "error": null, "status": 0, "callback": null}')
 
 
 def generate_fix_length_rpc_response(response_length):
-  length = response_length - len(MOCK_RESP_FLEXIABLE_RESULT_LENGTH) + 2
+  length = response_length - len(MOCK_RESP_TEMPLATE) + 2
   chars = string.ascii_letters + string.digits
-  random_msg = ''.join(random.choice(chars) for i in range(length))
-  mock_response = MOCK_RESP_FLEXIABLE_RESULT_LENGTH % random_msg
-  return mock_response
+  random_msg = ''.join(random.choice(chars) for _ in range(length))
+  return MOCK_RESP_TEMPLATE % random_msg
 
 
 def mock_android_device_for_client_test(
