@@ -177,19 +177,18 @@ class SnippetClientV2(client_base.ClientBase):
     adb_cmd += ['shell', cmd]
     return utils.start_standing_subprocess(adb_cmd, shell=False)
 
-  def _build_connection(self, host_port=None):
-    self._counter = self._id_counter()
-    self._forward_device_port(host_port)
+  def _build_connection(self):
+    self._forward_device_port()
     self._build_socket_connection()
     self._send_handshake_request()
 
-  def _forward_device_port(self, host_port=None):
+  def _forward_device_port(self):
     """Forwards the device port to a new host port."""
-    self.host_port = host_port or utils.get_available_host_port()
+    if not self.host_port:
+      self.host_port = utils.get_available_host_port()
     self._adb.forward(['tcp:%d' % self.host_port, 'tcp:%d' % self.device_port])
 
   def _build_socket_connection(self):
-    self._counter = self._id_counter()
     try:
       self._conn = socket.create_connection(('localhost', self.host_port),
                                             _SOCKET_CONNECTION_TIMEOUT)
@@ -211,7 +210,9 @@ class SnippetClientV2(client_base.ClientBase):
     if not cmd:
       cmd = JsonRpcCommand.INIT
     try:
-      resp = self._send_rpc_request(json.dumps({'cmd': cmd, 'uid': uid}))
+      # the method here only uses for logging
+      method_name = 'start_server_build_connection'
+      resp = self._send_rpc_request(method_name, {'cmd': cmd, 'uid': uid})
     except jsonrpc_client_base.ProtocolError as e:
       if jsonrpc_client_base.ProtocolError.NO_RESPONSE_FROM_SERVER in str(e):
         raise jsonrpc_client_base.ProtocolError(
@@ -270,7 +271,8 @@ class SnippetClientV2(client_base.ClientBase):
       self._device.adb.shell(
           'settings put global hidden_api_blacklist_exemptions "*"')
 
-  def _send_rpc_request(self, request):
+  def _send_rpc_request(self, method, request):
+    request = json.dumps(request)
     try:
       self._client.write(request.encode("utf8") + b'\n')
       self._client.flush()
@@ -282,15 +284,16 @@ class SnippetClientV2(client_base.ClientBase):
 
     try:
       response = self._client.readline()
-      if not response:
-        raise jsonrpc_client_base.ProtocolError(
-            self._device,
-            jsonrpc_client_base.ProtocolError.NO_RESPONSE_FROM_SERVER)
-      response = str(response, encoding='utf8')
-      return response
     except socket.error as e:
       raise Error(self._device,
                   'Encountered socket error reading RPC response "%s"' % e)
+
+    if not response:
+      raise jsonrpc_client_base.ProtocolError(
+          self._device,
+          jsonrpc_client_base.ProtocolError.NO_RESPONSE_FROM_SERVER)
+    response = str(response, encoding='utf8')
+    return response
 
   def _handle_callback(self, callback_id, ret_value, method_name):
     if self._event_client is None:
@@ -443,7 +446,10 @@ class SnippetClientV2(client_base.ClientBase):
       AppRestoreConnectionError: When the app was not able to be started.
     """
     try:
-      self._build_connection(port)
+      # If self.host_port is None, self._build_connection finds an available
+      # port.
+      self.host_port = port
+      self._build_connection()
     except Exception:
       # Log the original error and raise AppRestoreConnectionError.
       self.log.exception('Failed to re-connect to app.')
