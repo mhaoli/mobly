@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""JSON RPC Client for Android Devices."""
+"""JSON RPC Client for Interacting with Snippet Server on Android Device."""
 
 # When the Python library `socket.create_connection` call is made, it indirectly
 # calls `import encodings.idna` through the `socket.getaddrinfo` method.
@@ -52,7 +52,7 @@ _PROTOCOL_MAJOR_VERSION = 1
 # Increment this when new features are added to the launch and communication
 # protocol that are backwards compatible with the old protocol and don't break
 # existing clients.
-_PROTOCOL_MINOR_VERSION = 0
+_PROTOCOL_MINOR_VERSION = 1
 
 _LAUNCH_CMD = (
     '{shell_cmd} am instrument {user} -w -e action start {snippet_package}/' +
@@ -63,8 +63,8 @@ _STOP_CMD = ('am instrument {user} -w -e action stop {snippet_package}/' +
 
 # Test that uses UiAutomation requires the shell session to be maintained while
 # test is in progress. However, this requirement does not hold for the test that
-# deals with device USB disconnection (Once device disconnects, the shell
-# session that started the instrument ends, and UiAutomation fails with error:
+# deals with device disconnection (Once device disconnects, the shell session
+# that started the instrument ends, and UiAutomation fails with error:
 # "UiAutomation not connected"). To keep the shell session and redirect
 # stdin/stdout/stderr, use "setsid" or "nohup" while launching the
 # instrumentation test. Because these commands may not be available in every
@@ -76,8 +76,6 @@ _NOHUP_COMMAND = 'nohup'
 # UID of the 'unknown' jsonrpc session. Will cause creation of a new session.
 UNKNOWN_UID = -1
 
-# TODO: consider move this timeout config to general place
-
 # Maximum time to wait for the socket to open on the device.
 _SOCKET_CONNECTION_TIMEOUT = 60
 
@@ -88,31 +86,33 @@ _SOCKET_READ_TIMEOUT = callback_handler.MAX_TIMEOUT
 class JsonRpcCommand:
   """Commands that can be invoked on all jsonrpc clients.
   INIT: Initializes a new session.
-  CONTINUE: Creates a connection.
+  CONTINUE: Creates a connection with current session.
   """
   INIT = 'initiate'
   CONTINUE = 'continue'
 
 
 class SnippetClientV2(client_base.ClientBase):
-  """A client for interacting with snippet APKs using Mobly Snippet Lib.
-  See superclass documentation for a list of public attributes.
+  """A JSON RPC client for interacting with snippet server on Android Device.
+
+  See superclass documentation for a list of public attributes and communication
+  protocols.
+
   For a description of the launch protocols, see the documentation in
   mobly-snippet-lib, SnippetRunner.java.
   """
 
   def __init__(self, package, device):
-    """Initializes a SnippetClient.
+    """
     Args:
-      package: (str) The package name of the apk where the snippets are
-        defined.
-      device: (AndroidDevice) the device object associated with this client.
+      package: str, see base class.
+      device: AndroidDevice, see base class.
     """
     super().__init__(package=package, device=device)
     self._adb = device.adb
     self._proc = None
     self._user_id = None
-    self._client = None  # prevent close errors on connect failure
+    self._client = None  # keep it to prevent close errors on connect failure
     self._conn = None
     self._event_client = None
 
@@ -124,9 +124,11 @@ class SnippetClientV2(client_base.ClientBase):
   @property
   def user_id(self):
     """The user id to use for this snippet client.
+
     This value is cached and, once set, does not change through the lifecycles
     of this snippet client object. This caching also reduces the number of adb
     calls needed.
+
     Because all the operations of the snippet client should be done for a
     partucular user.
     """
@@ -134,12 +136,13 @@ class SnippetClientV2(client_base.ClientBase):
       self._user_id = self._adb.current_user_id
     return self._user_id
 
-  def _before_starting_server(self):
+  def before_starting_server(self):
     self._check_app_installed()
     self._disable_hidden_api_blacklist()
 
-  def _do_start_server(self):
-    """ Starts the snippet server.
+  def do_start_server(self):
+    """Starts the snippet server.
+
     This function starts the snippet server with adb command, checks the
     protocol version of the server, and parses device port from the server
     output.
@@ -161,7 +164,9 @@ class SnippetClientV2(client_base.ClientBase):
     # Check protocol version and get the device port
     line = self._read_protocol_line()
     match = re.match('^SNIPPET START, PROTOCOL ([0-9]+) ([0-9]+)$', line)
-    if not match or match.group(1) != '1':
+    if not match or (
+        utils.safe_cast_type(match.group(1), int) != _PROTOCOL_MINOR_VERSION
+    ):
       raise snippet_client.ProtocolVersionError(self._device, line)
 
     line = self._read_protocol_line()
@@ -177,7 +182,7 @@ class SnippetClientV2(client_base.ClientBase):
     adb_cmd += ['shell', cmd]
     return utils.start_standing_subprocess(adb_cmd, shell=False)
 
-  def _build_connection(self):
+  def build_connection(self):
     self._forward_device_port()
     self._build_socket_connection()
     self._send_handshake_request()
@@ -271,7 +276,10 @@ class SnippetClientV2(client_base.ClientBase):
       self._device.adb.shell(
           'settings put global hidden_api_blacklist_exemptions "*"')
 
-  def _send_rpc_request(self, method, request):
+  def check_server_proc_running(self):
+    pass
+
+  def send_rpc_request(self, method, request):
     request = json.dumps(request)
     try:
       self._client.write(request.encode("utf8") + b'\n')
@@ -295,7 +303,7 @@ class SnippetClientV2(client_base.ClientBase):
     response = str(response, encoding='utf8')
     return response
 
-  def _handle_callback(self, callback_id, ret_value, method_name):
+  def handle_callback(self, callback_id, ret_value, method_name):
     if self._event_client is None:
       self._event_client = self._start_event_client()
     return callback_handler.CallbackHandler(callback_id=callback_id,
@@ -314,7 +322,7 @@ class SnippetClientV2(client_base.ClientBase):
     event_client._send_handshake_request(self.uid, JsonRpcCommand.CONTINUE)
     return event_client
 
-  def _stop_server(self):
+  def do_stop_server(self):
     # Kill the pending 'adb shell am instrument -w' process if there is one.
     # Although killing the snippet apk would abort this process anyway, we
     # want to call stop_standing_subprocess() to perform a health check,
@@ -340,8 +348,7 @@ class SnippetClientV2(client_base.ClientBase):
       self._stop_port_forwarding()
 
   def _stop_port_forwarding(self):
-    """Stops the adb port forwarding of the host port used by this client.
-    """
+    """Stops the adb port forwarding of the host port used by this client."""
     if self.host_port:
       self._device.adb.forward(['--remove', 'tcp:%d' % self.host_port])
       self.host_port = None
@@ -472,6 +479,3 @@ class SnippetClientV2(client_base.ClientBase):
     self._event_client.device_port = self.device_port
     self._event_client._build_socket_connection()
     self._event_client._send_handshake_request()
-
-  def disconnect(self):
-    self._close_socket_connection()
