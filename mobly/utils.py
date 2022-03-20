@@ -30,11 +30,15 @@ import subprocess
 import threading
 import time
 import traceback
-from typing import Tuple, overload
+from typing import Tuple, overload, Callable, TypeVar, Optional
 
 import portpicker
 # TODO(ericth): Use Literal from typing if we only run on Python 3.8 or later.
 from typing_extensions import Literal
+
+# Type Variables
+T = TypeVar('T')
+S = TypeVar('S')
 
 # File name length is limited to 255 chars on some OS, so we need to make sure
 # the file names we output fits within the limit.
@@ -694,3 +698,12 @@ def find_subclass_in_module(base_class, module):
         'Expected 1 subclass of %s per module, found %s.' %
         (base_class.__name__, [subclass.__name__ for subclass in subclasses]))
   return subclasses[0]
+
+
+def safe_cast_type(val: T,
+                   to_type: Callable[[T], S],
+                   default: Optional[S] = None) -> Optional[S]:
+  try:
+    return to_type(val)
+  except (ValueError, TypeError):
+    return default
